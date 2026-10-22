@@ -164,9 +164,9 @@ public final class QoderApi {
         String signBody = Crypto.qoderEncode("{}".getBytes(StandardCharsets.UTF_8));
         String url = GATEWAY + MODELS_PATH;
         Map<String, String> h = sess.headers(signBody, url, "", false);
-        HttpUtil.Resp r = HttpUtil.post(url, signBody.getBytes(StandardCharsets.UTF_8), h);
-        if (r.code != 200) return "{\"error\":\"http " + r.code + "\"}";
-        // 响应是 qoder_encode 过的 JSON
+        // 模型列表接口只支持 GET 带 body，走 RawHttp
+        RawHttp.Resp r = RawHttp.request("GET", url, signBody.getBytes(StandardCharsets.UTF_8), h, 30000);
+        if (r.code != 200) return "{\"error\":\"http " + r.code + " body=" + r.body + "\"}";
         String decoded = new String(Crypto.qoderDecode(r.body.trim()), StandardCharsets.UTF_8);
         return decoded;
     }
