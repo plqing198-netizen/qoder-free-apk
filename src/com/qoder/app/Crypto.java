@@ -106,6 +106,12 @@ public final class Crypto {
         } catch (Exception e) { throw new RuntimeException(e); }
     }
 
+    public static byte[] sha256Digest(String s) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
     public static String sha512Hex(String s) {
         try {
             byte[] d = MessageDigest.getInstance("SHA-512").digest(s.getBytes(StandardCharsets.UTF_8));

@@ -15,23 +15,20 @@
   #main { flex: 1; overflow-y: auto; padding: 12px; }
   .card { background: #16181d; border: 1px solid #23262d; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
   .card h2 { font-size: 13px; color: #94a3b8; margin-bottom: 10px; }
-  .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
-  select, input[type=text], input[type=number], textarea { background: #0b0d11; border: 1px solid #2c313a; color: #e6e6e6; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
-  select { flex: 1; }
+  .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=text], input[type=number] { background: #0b0d11; border: 1px solid #2c313a; color: #e6e6e6; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
   button { background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer; }
   button.ghost { background: #23262d; color: #cbd5e1; }
   button:active { opacity: .8; }
-  #chat { min-height: 200px; max-height: 45vh; overflow-y: auto; background: #0b0d11; border: 1px solid #2c313a; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
-  .msg { margin-bottom: 10px; white-space: pre-wrap; word-break: break-word; }
-  .msg.user { color: #93c5fd; }
-  .msg.assistant { color: #e6e6e6; }
-  .msg .think { color: #64748b; font-size: 12px; }
-  #input { width: 100%; min-height: 60px; resize: vertical; }
-  #status { font-size: 12px; color: #64748b; padding: 4px 0; }
   .stat { font-size: 12px; color: #94a3b8; }
   code { background: #0b0d11; padding: 2px 6px; border-radius: 4px; font-size: 12px; word-break: break-all; }
   .hidden { display: none; }
   #loginUrl { word-break: break-all; font-size: 12px; color: #93c5fd; }
+  .modellist { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .modelchip { background: #1e293b; border: 1px solid #2c313a; border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  .modelchip:active { background: #334155; }
+  .modelchip .name { color: #e6e6e6; }
+  .modelchip .meta { font-size: 11px; color: #64748b; }
 </style>
 </head>
 <body>
@@ -52,18 +49,12 @@
       <button class="ghost" onclick="logout()">退出登录</button></div>
   </div>
 
-  <!-- 聊天 -->
+  <!-- 模型列表 -->
   <div class="card">
-    <h2>对话</h2>
-    <div class="row">
-      <select id="modelSel"><option value="">加载模型中…</option></select>
-      <button onclick="refreshModels()">刷新模型</button>
-    </div>
-    <div id="chat"></div>
-    <textarea id="input" placeholder="输入消息，Enter 发送（Shift+Enter 换行）"></textarea>
-    <div class="row" style="margin-top:8px"><button id="sendBtn" onclick="send()">发送</button>
-      <button class="ghost" onclick="clearChat()">清空</button></div>
-    <div id="status"></div>
+    <h2>可用模型</h2>
+    <div class="row"><button onclick="refreshModels()">刷新模型</button></div>
+    <div id="modelStatus" class="stat">登录后点击「刷新模型」</div>
+    <div class="modellist" id="modelList"></div>
   </div>
 
   <!-- 养号 -->
@@ -107,13 +98,12 @@ function refreshLoginBadge() {
 
 function startLogin() {
   var r = JSON.parse(b().startLogin());
-  if (r.error) { setStatus('登录发起失败: ' + r.error); return; }
+  if (r.error) { document.getElementById('loginStatus').textContent = '登录发起失败: ' + r.error; return; }
   loginNonce = r.nonce; loginVerifier = r.verifier;
   document.getElementById('loginUrl').textContent = r.authUrl;
   document.getElementById('authUrlWrap').classList.remove('hidden');
   document.getElementById('authBtn').disabled = false;
   document.getElementById('loginStatus').textContent = '已生成授权，请在浏览器打开授权 URL 并登录 Qoder 账号';
-  setStatus('授权已生成，打开 URL 登录');
 }
 
 function openAuthUrl() {
@@ -122,73 +112,65 @@ function openAuthUrl() {
 }
 
 function pollLogin() {
-  if (!loginNonce || !loginVerifier) { setStatus('请先发起登录'); return; }
+  if (!loginNonce || !loginVerifier) { document.getElementById('loginStatus').textContent = '请先发起登录'; return; }
   var r = JSON.parse(b().pollLogin(loginNonce, loginVerifier));
   if (r.status === 'ok') {
     document.getElementById('loginStatus').textContent = '登录成功！';
     refreshLoginBadge();
-    setStatus('登录成功');
     refreshModels();
   } else if (r.status === 'pending') {
-    document.getElementById('loginStatus').textContent = '等待授权…（未完成）';
-    setStatus('等待授权');
+    document.getElementById('loginStatus').textContent = '等待授权…（未完成，授权后点这里）';
   } else {
     document.getElementById('loginStatus').textContent = '登录失败: ' + (r.message||'');
-    setStatus('登录失败: ' + (r.message||''));
   }
 }
 
-function logout() { b().logout(); document.getElementById('loginBadge').textContent='未登录'; document.getElementById('loginBadge').className='badge no'; setStatus('已退出'); }
+function logout() {
+  b().logout();
+  document.getElementById('loginBadge').textContent='未登录';
+  document.getElementById('loginBadge').className='badge no';
+  document.getElementById('loginStatus').textContent = '已退出';
+}
 
 function refreshModels() {
   var r = b().fetchModels();
+  document.getElementById('modelStatus').textContent = '正在获取…';
   try {
     var j = JSON.parse(r);
-    if (j.error) { setStatus('拉取模型失败: ' + j.error); return; }
-    var arr = null;
-    if (j.chat) arr = j.chat;
-    else if (j.data) arr = j.data;
-    var sel = document.getElementById('modelSel');
-    sel.innerHTML = '';
-    if (arr && arr.length) {
+    if (j.error) { document.getElementById('modelStatus').textContent = '拉取失败: ' + j.error; return; }
+    var arr = j.chat || j.data || j.models || [];
+    var box = document.getElementById('modelList');
+    box.innerHTML = '';
+    if (arr.length) {
       for (var i=0;i<arr.length;i++) {
         var m = arr[i];
         if (m.enable === false) continue;
         var key = m.key || m.id || m.model;
         if (!key) continue;
-        var o = document.createElement('option');
-        o.value = key;
-        o.textContent = (m.display_name || m.name || key);
-        sel.appendChild(o);
+        var name = m.display_name || m.name || key;
+        var chip = document.createElement('div');
+        chip.className = 'modelchip';
+        chip.innerHTML = '<div class="name">'+esc(name)+'</div><div class="meta">'+esc(key)+'</div>';
+        chip.onclick = (function(k){ return function(){ copyText(k); }; })(key);
+        box.appendChild(chip);
       }
-      setStatus('模型已加载: ' + arr.length + ' 个');
+      document.getElementById('modelStatus').textContent = '共 ' + arr.length + ' 个模型（点卡片复制模型 key）';
     } else {
-      setStatus('无可用模型');
+      document.getElementById('modelStatus').textContent = '无可用模型';
     }
-  } catch(e) { setStatus('模型解析失败'); }
+  } catch(e) {
+    document.getElementById('modelStatus').textContent = '模型解析失败: ' + e;
+  }
 }
 
-function send() {
-  var inp = document.getElementById('input');
-  var text = inp.value.trim();
-  if (!text) return;
-  var model = document.getElementById('modelSel').value;
-  if (!model) { setStatus('请先选择模型'); return; }
-  var chat = document.getElementById('chat');
-  chat.innerHTML += '<div class="msg user">'+esc(text)+'</div>';
-  inp.value = '';
-  var payload = { model: model, messages: [{role:'user', content:text}] };
-  setStatus('思考中…');
-  var r = JSON.parse(b().chat(JSON.stringify(payload)));
-  var html = '';
-  if (r.reasoning) html += '<div class="think">【思考】'+esc(r.reasoning)+'</div>';
-  html += '<div class="msg assistant">'+esc(r.body||'(空回复)')+'</div>';
-  chat.innerHTML += html;
-  chat.scrollTop = chat.scrollHeight;
-  setStatus(r.code===200?'':('错误: '+(r.body||'')));
+function copyText(t) {
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = t; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    document.getElementById('modelStatus').textContent = '已复制: ' + t;
+  } catch(e) {}
 }
-
-function clearChat() { document.getElementById('chat').innerHTML=''; }
 
 function doCheckin() {
   var r = b().checkin();
@@ -203,23 +185,17 @@ function doQuota() {
 function gwStart() {
   var port = document.getElementById('gwPort').value;
   var r = JSON.parse(b().gwStart(port));
-  document.getElementById('gwState').textContent = r.running ? ('运行中 · 端口 ' + r.port) : '启动失败';
+  document.getElementById('gwState').textContent = r.running ? ('运行中 · 端口 ' + r.port) : '启动失败（端口可能被占）';
   document.getElementById('gwBaseUrl').textContent = r.baseUrl || '';
 }
 
 function gwStop() {
   var r = JSON.parse(b().gwStop());
   document.getElementById('gwState').textContent = r.running ? '运行中' : '已停止';
+  document.getElementById('gwBaseUrl').textContent = '';
 }
 
-function setStatus(s) { document.getElementById('status').textContent = s; }
-
-document.getElementById('input').addEventListener('keydown', function(e){
-  if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-});
-
 refreshLoginBadge();
-setTimeout(refreshModels, 500);
 </script>
 </body>
 </html>

@@ -48,8 +48,7 @@ public final class QoderApi {
     public static LoginStart startLogin(String machineId) {
         String verifier = UUID.randomUUID().toString().replace("-", "")
                 + UUID.randomUUID().toString().replace("-", "");
-        String challenge = Crypto.base64Url(
-                Crypto.sha256Hex(verifier).getBytes(StandardCharsets.UTF_8));
+        String challenge = Crypto.base64Url(Crypto.sha256Digest(verifier));
         String nonce = UUID.randomUUID().toString(); // CN nonce 带横线
         LoginStart s = new LoginStart();
         s.verifier = verifier;
