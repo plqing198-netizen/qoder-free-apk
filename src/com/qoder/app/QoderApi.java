@@ -167,8 +167,8 @@ public final class QoderApi {
         // 模型列表接口只支持 GET 带 body，走 RawHttp
         RawHttp.Resp r = RawHttp.request("GET", url, signBody.getBytes(StandardCharsets.UTF_8), h, 30000);
         if (r.code != 200) return "{\"error\":\"http " + r.code + " body=" + r.body + "\"}";
-        String decoded = new String(Crypto.qoderDecode(r.body.trim()), StandardCharsets.UTF_8);
-        return decoded;
+        // 响应是明文 UTF-8 JSON，直接返回（不要再 qoderDecode）
+        return r.body;
     }
 
     /** 发送 chat（流式）。body 已经是 qoder_encode 后的字符串。 */
