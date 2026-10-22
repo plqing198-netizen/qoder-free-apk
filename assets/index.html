@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qoder 白嫖</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f1115; color: #e6e6e6; display: flex; flex-direction: column; height: 100vh; }
+  header { padding: 12px 16px; background: #16181d; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #23262d; }
+  header h1 { font-size: 16px; flex: 1; }
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; background: #1e293b; }
+  .badge.ok { background: #14532d; color: #86efac; }
+  .badge.no { background: #7f1d1d; color: #fca5a5; }
+  #main { flex: 1; overflow-y: auto; padding: 12px; }
+  .card { background: #16181d; border: 1px solid #23262d; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; color: #94a3b8; margin-bottom: 10px; }
+  .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+  select, input[type=text], input[type=number], textarea { background: #0b0d11; border: 1px solid #2c313a; color: #e6e6e6; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+  select { flex: 1; }
+  button { background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer; }
+  button.ghost { background: #23262d; color: #cbd5e1; }
+  button:active { opacity: .8; }
+  #chat { min-height: 200px; max-height: 45vh; overflow-y: auto; background: #0b0d11; border: 1px solid #2c313a; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+  .msg { margin-bottom: 10px; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { color: #93c5fd; }
+  .msg.assistant { color: #e6e6e6; }
+  .msg .think { color: #64748b; font-size: 12px; }
+  #input { width: 100%; min-height: 60px; resize: vertical; }
+  #status { font-size: 12px; color: #64748b; padding: 4px 0; }
+  .stat { font-size: 12px; color: #94a3b8; }
+  code { background: #0b0d11; padding: 2px 6px; border-radius: 4px; font-size: 12px; word-break: break-all; }
+  .hidden { display: none; }
+  #loginUrl { word-break: break-all; font-size: 12px; color: #93c5fd; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Qoder 白嫖</h1>
+  <span id="loginBadge" class="badge no">未登录</span>
+</header>
+<div id="main">
+
+  <!-- 登录 -->
+  <div class="card" id="loginCard">
+    <h2>账号登录（Qoder 国内版）</h2>
+    <div class="row"><button onclick="startLogin()">发起设备码登录</button>
+      <button class="ghost" onclick="openAuthUrl()" id="authBtn" disabled>打开授权页</button></div>
+    <div id="loginStatus" class="stat">尚未发起</div>
+    <div id="authUrlWrap" class="hidden"><div class="stat">授权 URL（可复制到浏览器打开）：</div><div id="loginUrl"></div></div>
+    <div class="row" style="margin-top:8px"><button class="ghost" onclick="pollLogin()">我已授权，检查登录</button>
+      <button class="ghost" onclick="logout()">退出登录</button></div>
+  </div>
+
+  <!-- 聊天 -->
+  <div class="card">
+    <h2>对话</h2>
+    <div class="row">
+      <select id="modelSel"><option value="">加载模型中…</option></select>
+      <button onclick="refreshModels()">刷新模型</button>
+    </div>
+    <div id="chat"></div>
+    <textarea id="input" placeholder="输入消息，Enter 发送（Shift+Enter 换行）"></textarea>
+    <div class="row" style="margin-top:8px"><button id="sendBtn" onclick="send()">发送</button>
+      <button class="ghost" onclick="clearChat()">清空</button></div>
+    <div id="status"></div>
+  </div>
+
+  <!-- 养号 -->
+  <div class="card">
+    <h2>养号</h2>
+    <div class="row"><button onclick="doCheckin()">立即签到</button>
+      <button class="ghost" onclick="doQuota()">查额度</button></div>
+    <div id="checkinResult" class="stat"></div>
+    <div id="quotaResult" class="stat"></div>
+  </div>
+
+  <!-- 网关 -->
+  <div class="card">
+    <h2>本地网关（OpenAI 兼容）</h2>
+    <div class="row">
+      <input type="number" id="gwPort" value="9253" style="width:100px">
+      <button onclick="gwStart()">启动</button>
+      <button class="ghost" onclick="gwStop()">停止</button>
+    </div>
+    <div id="gwState" class="stat"></div>
+    <div class="stat" id="gwBaseUrl"></div>
+  </div>
+
+</div>
+
+<script>
+function b() { return window.AndroidBridge; }
+var loginNonce = null, loginVerifier = null;
+
+function esc(s){ return String(s||'').replace(/[&<>]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+
+function refreshLoginBadge() {
+  try {
+    var a = JSON.parse(b().account());
+    if (a.uid || a.access_token) {
+      document.getElementById('loginBadge').textContent = '已登录: ' + (a.nickname || a.uid || '');
+      document.getElementById('loginBadge').className = 'badge ok';
+    }
+  } catch(e) {}
+}
+
+function startLogin() {
+  var r = JSON.parse(b().startLogin());
+  if (r.error) { setStatus('登录发起失败: ' + r.error); return; }
+  loginNonce = r.nonce; loginVerifier = r.verifier;
+  document.getElementById('loginUrl').textContent = r.authUrl;
+  document.getElementById('authUrlWrap').classList.remove('hidden');
+  document.getElementById('authBtn').disabled = false;
+  document.getElementById('loginStatus').textContent = '已生成授权，请在浏览器打开授权 URL 并登录 Qoder 账号';
+  setStatus('授权已生成，打开 URL 登录');
+}
+
+function openAuthUrl() {
+  var u = document.getElementById('loginUrl').textContent;
+  if (u) b().openUrl(u);
+}
+
+function pollLogin() {
+  if (!loginNonce || !loginVerifier) { setStatus('请先发起登录'); return; }
+  var r = JSON.parse(b().pollLogin(loginNonce, loginVerifier));
+  if (r.status === 'ok') {
+    document.getElementById('loginStatus').textContent = '登录成功！';
+    refreshLoginBadge();
+    setStatus('登录成功');
+    refreshModels();
+  } else if (r.status === 'pending') {
+    document.getElementById('loginStatus').textContent = '等待授权…（未完成）';
+    setStatus('等待授权');
+  } else {
+    document.getElementById('loginStatus').textContent = '登录失败: ' + (r.message||'');
+    setStatus('登录失败: ' + (r.message||''));
+  }
+}
+
+function logout() { b().logout(); document.getElementById('loginBadge').textContent='未登录'; document.getElementById('loginBadge').className='badge no'; setStatus('已退出'); }
+
+function refreshModels() {
+  var r = b().fetchModels();
+  try {
+    var j = JSON.parse(r);
+    if (j.error) { setStatus('拉取模型失败: ' + j.error); return; }
+    var arr = null;
+    if (j.chat) arr = j.chat;
+    else if (j.data) arr = j.data;
+    var sel = document.getElementById('modelSel');
+    sel.innerHTML = '';
+    if (arr && arr.length) {
+      for (var i=0;i<arr.length;i++) {
+        var m = arr[i];
+        if (m.enable === false) continue;
+        var key = m.key || m.id || m.model;
+        if (!key) continue;
+        var o = document.createElement('option');
+        o.value = key;
+        o.textContent = (m.display_name || m.name || key);
+        sel.appendChild(o);
+      }
+      setStatus('模型已加载: ' + arr.length + ' 个');
+    } else {
+      setStatus('无可用模型');
+    }
+  } catch(e) { setStatus('模型解析失败'); }
+}
+
+function send() {
+  var inp = document.getElementById('input');
+  var text = inp.value.trim();
+  if (!text) return;
+  var model = document.getElementById('modelSel').value;
+  if (!model) { setStatus('请先选择模型'); return; }
+  var chat = document.getElementById('chat');
+  chat.innerHTML += '<div class="msg user">'+esc(text)+'</div>';
+  inp.value = '';
+  var payload = { model: model, messages: [{role:'user', content:text}] };
+  setStatus('思考中…');
+  var r = JSON.parse(b().chat(JSON.stringify(payload)));
+  var html = '';
+  if (r.reasoning) html += '<div class="think">【思考】'+esc(r.reasoning)+'</div>';
+  html += '<div class="msg assistant">'+esc(r.body||'(空回复)')+'</div>';
+  chat.innerHTML += html;
+  chat.scrollTop = chat.scrollHeight;
+  setStatus(r.code===200?'':('错误: '+(r.body||'')));
+}
+
+function clearChat() { document.getElementById('chat').innerHTML=''; }
+
+function doCheckin() {
+  var r = b().checkin();
+  document.getElementById('checkinResult').textContent = '签到结果: ' + r;
+}
+
+function doQuota() {
+  var r = b().quota();
+  document.getElementById('quotaResult').textContent = '额度: ' + r;
+}
+
+function gwStart() {
+  var port = document.getElementById('gwPort').value;
+  var r = JSON.parse(b().gwStart(port));
+  document.getElementById('gwState').textContent = r.running ? ('运行中 · 端口 ' + r.port) : '启动失败';
+  document.getElementById('gwBaseUrl').textContent = r.baseUrl || '';
+}
+
+function gwStop() {
+  var r = JSON.parse(b().gwStop());
+  document.getElementById('gwState').textContent = r.running ? '运行中' : '已停止';
+}
+
+function setStatus(s) { document.getElementById('status').textContent = s; }
+
+document.getElementById('input').addEventListener('keydown', function(e){
+  if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+refreshLoginBadge();
+setTimeout(refreshModels, 500);
+</script>
+</body>
+</html>
