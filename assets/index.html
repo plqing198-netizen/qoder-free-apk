@@ -20,7 +20,7 @@
   button { background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer; }
   button.ghost { background: #23262d; color: #cbd5e1; }
   button:active { opacity: .8; }
-  .stat { font-size: 12px; color: #94a3b8; }
+  .stat { font-size: 12px; color: #94a3b8; word-break: break-all; overflow-wrap: anywhere; white-space: normal; }
   code { background: #0b0d11; padding: 2px 6px; border-radius: 4px; font-size: 12px; word-break: break-all; }
   .hidden { display: none; }
   #loginUrl { word-break: break-all; font-size: 12px; color: #93c5fd; }
@@ -174,12 +174,31 @@ function copyText(t) {
 
 function doCheckin() {
   var r = b().checkin();
-  document.getElementById('checkinResult').textContent = '签到结果: ' + r;
+  try {
+    var j = JSON.parse(r);
+    if (j.error) { document.getElementById('checkinResult').textContent = '签到: ' + j.error; return; }
+    var st = j.status, cl = j.claim;
+    var stJ = (typeof st === 'string') ? JSON.parse(st) : st;
+    var clJ = (typeof cl === 'string') ? JSON.parse(cl) : cl;
+    var remain = stJ && stJ.remaining != null ? stJ.remaining : (stJ && stJ.remain);
+    document.getElementById('checkinResult').textContent = '签到: ' + (remain != null ? '剩余 '+remain+' 次' : JSON.stringify(stJ));
+  } catch(e) {
+    document.getElementById('checkinResult').textContent = '签到: ' + r;
+  }
 }
 
 function doQuota() {
   var r = b().quota();
-  document.getElementById('quotaResult').textContent = '额度: ' + r;
+  try {
+    var j = JSON.parse(r);
+    if (j.error) { document.getElementById('quotaResult').textContent = '额度: ' + j.error; return; }
+    var uq = j.userQuota || {};
+    var total = uq.total, used = uq.used, remain = uq.remaining;
+    var pct = uq.percentage != null ? Math.round(uq.percentage*100)+'%' : '';
+    document.getElementById('quotaResult').textContent = '额度: 剩余 ' + remain + ' / 总共 ' + total + (used != null ? '（已用 '+used+'）' : '') + (pct ? ' ' + pct : '');
+  } catch(e) {
+    document.getElementById('quotaResult').textContent = '额度: ' + r;
+  }
 }
 
 function gwStart() {
